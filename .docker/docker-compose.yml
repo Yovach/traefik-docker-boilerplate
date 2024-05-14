@@ -1,0 +1,159 @@
+services:
+  db:
+    image: postgres:15
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - db:/var/lib/postgresql/data
+    labels:
+      - "traefik.enable=true"
+    depends_on:
+      - traefik
+    networks:
+      - proxy
+      - monitoring
+    expose:
+      - 5432
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis:/data
+    labels:
+      - "traefik.enable=true"
+    depends_on:
+      - traefik
+    networks:
+      - proxy
+    expose:
+      - 6379
+
+  traefik:
+    image: traefik:2.10
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Mapping of the Docker daemon socket to allow Traefik to detect new services and redirect
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Static configuration
+      - ./services/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      # Dynamic configuration
+      - ./services/traefik/config.yml:/etc/traefik/config.yml:ro
+      # On map les certificats dans le conteneur
+      - ../tmp/acme:/etc/traefik/acme:rw
+      - ../tmp/logs:/var/log/traefik
+    labels:
+      # This container will be accessible to Traefik
+      # See more on https://docs.traefik.io/providers/docker/#exposedbydefault
+      - "traefik.enable=true"
+      # Use "traefik" configuration from dynamlic configuration (./traefik/config.yml)
+      - "traefik.http.routers.traefik=true"
+    networks:
+      - proxy
+    ports:
+      # Web
+      - 80:80
+      - 443:443
+      # - 6379:6379 # REDIS PORT
+      # - 5432:5432 # POSTGRESQL PORT
+    environment:
+      - APP_URL=${APP_URL}
+      - CF_DNS_API_TOKEN
+
+  adminer:
+    image: adminer:latest
+    environment:
+      ADMINER_DESIGN: pepa-linha
+    labels:
+      - "traefik.enable=true"
+    networks:
+      - proxy
+    expose:
+      - 8080
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - proxy
+      - monitoring
+    expose:
+      - 9100
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./services/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+    networks:
+      - proxy
+      - monitoring
+    expose:
+      - 9090
+
+  grafana:
+    image: grafana/grafana
+    volumes:
+      - ./services/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./services/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - grafana:/var/lib/grafana
+    labels:
+      - "traefik.enable=true"
+    networks:
+      - proxy
+    expose:
+      - 3000
+
+  loki:
+    image: grafana/loki:2.9.5
+    expose:
+      - 3100
+    volumes:
+      - ./services/loki/loki.yml:/etc/loki/loki-config.yaml
+      - loki:/data/loki
+    networks:
+      - proxy
+    command: -config.file=/etc/loki/loki-config.yaml
+
+  promtail:
+    image: grafana/promtail:2.9.2
+    volumes:
+      - ./services/promtail/promtail.yml:/etc/promtail/promtail-config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    depends_on:
+      - loki
+    networks:
+      - proxy
+
+volumes:
+  db:
+  redis:
+  prometheus:
+  grafana:
+  loki:
+
+networks:
+  proxy:
+    external: true
+  monitoring:

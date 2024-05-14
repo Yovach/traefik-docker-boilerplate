@@ -1,0 +1,67 @@
+# traefik/traefik.yml
+global:
+  sendAnonymousUsage: false
+
+api:
+  dashboard: true
+
+metrics:
+  prometheus:
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addServicesLabels: true
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+
+  file:
+    filename: /etc/traefik/config.yml
+    watch: true
+
+log:
+  level: INFO
+accessLog:
+  filePath: /var/log/traefik/access.log
+
+entryPoints:
+  # HTTP / HTTPS
+  http:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: https
+          scheme: https
+  https:
+    address: ":443"
+    # http:
+    #   tls:
+    #     domains:
+    #       - main: [REPLACEME]
+    #         sans:
+    #           - "*.[REPLACEME]"
+
+  metrics:
+    address: ":8082"
+
+  # TCP
+  postgres:
+    address: ":5432"
+
+  redis:
+    address: ":6379"
+
+certificatesResolvers:
+  acmeResolver:
+    acme:
+      # email: #[REPLACEME]
+      storage: /etc/traefik/acme/acme.json
+      dnsChallenge:
+        provider: cloudflare

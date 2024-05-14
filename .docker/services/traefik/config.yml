@@ -1,0 +1,107 @@
+# traefik/config.yml
+
+# tcp:
+#   services:
+#     postgres:
+#       loadBalancer:
+#         servers:
+#           - address: "db:5432"
+#     redis:
+#       loadBalancer:
+#         servers:
+#           - address: "redis:6379"
+
+#   routers:
+#     postgres:
+#       rule: "HostSNI(`*`)"
+#       service: "postgres"
+#       entryPoints:
+#         - "postgres"
+
+#     redis:
+#       rule: "HostSNI(`*`)"
+#       service: "redis"
+#       entryPoints:
+#         - "redis"
+
+http:
+  services:
+    web:
+      loadBalancer:
+        servers:
+          - url: http://web:3000
+        healthCheck:
+          path: /api/v0/health
+          interval: "10s"
+          timeout: "5s"
+
+    grafana:
+      loadBalancer:
+        servers:
+          - url: "http://grafana:3000"
+    adminer:
+      loadBalancer:
+        servers:
+          - url: "http://adminer:8080"
+
+  middlewares:
+    security:
+      headers:
+        customRequestHeaders:
+          X-Forwarded-Proto: "https"
+        customResponseHeaders:
+          X-Forwarded-Proto: "https"
+        stsSeconds: 315360000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        referrerpolicy: same-origin
+        permissionsPolicy: geolocation=(), microphone=(), camera=()
+
+  routers:
+    traefik:
+      rule: Host(`traefik.{{ env "APP_URL" }}`) && (PathPrefix(`/api`) || PathPrefix(`/dashboard`))
+      service: api@internal
+      entryPoints:
+        - "http"
+        - "https"
+      tls:
+        certResolver: acmeResolver
+
+    grafana:
+      rule: Host(`grafana.{{ env "APP_URL" }}`)
+      service: "grafana"
+      middlewares:
+        - "security"
+      entryPoints:
+        - "http"
+        - "https"
+      tls:
+        certResolver: acmeResolver
+
+    adminer:
+      rule: Host(`adminer.{{ env "APP_URL" }}`)
+      service: "adminer"
+      middlewares:
+        - "security"
+      entryPoints:
+        - "http"
+        - "https"
+      tls:
+        certResolver: acmeResolver
+
+    web:
+      rule: Host(`{{ env "APP_URL" }}`)
+      service: "web"
+      middlewares:
+        - "security"
+      entryPoints:
+        - "http"
+        - "https"
+      tls:
+        certResolver: acmeResolver
+
+tls:
+  options:
+    default:
+      sniStrict: true
